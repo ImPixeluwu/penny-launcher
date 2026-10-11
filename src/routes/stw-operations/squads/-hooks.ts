@@ -1,3 +1,6 @@
+import type { FillPlan, SlotScore } from './-squad-model'
+import type { FortStatKey } from '../../../config/constants/fortnite/fort'
+import type { SquadDefinition } from '../../../config/constants/fortnite/squads'
 import type {
   SquadAssignment,
   SquadSurvivor,
@@ -16,37 +19,75 @@ import {
 
 import { useGetSelectedAccount } from '../../../hooks/accounts'
 
-import { computeItemPower } from '../../../config/constants/fortnite/power'
 import {
+  leadJobMatches,
+  planAutoFill,
+  rankCandidates,
+  ratingOf,
+  slotMapOf,
+  slotScore,
+  squadTotal,
+} from './-squad-model'
+
+import {
+  squadAttributeStats,
+  squadLeaderSlotIndex,
   squadSlotCount,
   survivorSquads,
 } from '../../../config/constants/fortnite/squads'
 
 import { toast } from '../../../lib/notifications'
 
-export type SquadSlotView = {
-  slotIndex: number
-  survivor: DecoratedSurvivor | null
-  /**
-   * Support slots only. A survivor whose personality matches the squad
-   * lead's gives its full bonus; a mismatch costs you power.
-   */
-  matchesLead: boolean | null
-}
-
 export type DecoratedSurvivor = SquadSurvivor & {
   name: string
   /**
-   * The second line on a tile. For a rank-and-file survivor — whose name is
+   * The second line on a row. For a rank-and-file survivor — whose name is
    * just "Survivor" — the name is its personality and this is its set bonus,
    * which is what the game's own squad screen tells them apart by.
    */
   caption: string | null
-  power: number | null
+  /** Rating at its level, before any squad bonus. */
+  power: number
 }
 
-/** "Trap Durability High" → "Trap Durability": the tier is noise on a tile. */
-function shortSetBonus(setBonus: string | null) {
+export type SquadSlotView = {
+  slotIndex: number
+  survivor: DecoratedSurvivor | null
+  /** What the occupant adds to F.O.R.T. here, bonus included. */
+  score: SlotScore | null
+  /** Support slots: whether the personality matches the lead's. Null without a lead. */
+  matchesLead: boolean | null
+  /** Lead slot: whether this squad is the one that doubles the lead's job. */
+  matchesJob: boolean | null
+}
+
+export type SquadIssues = {
+  empty: number
+  /** Supports whose personality misses the lead's, so they lose its bonus. */
+  mismatched: number
+  /** The lead's job belongs to another squad, so it is not doubled. */
+  wrongJob: boolean
+}
+
+export type SquadView = {
+  id: string
+  label: string
+  attribute: SquadDefinition['attribute']
+  stat: FortStatKey
+  slots: Array<SquadSlotView>
+  lead: DecoratedSurvivor | null
+  /** What the squad adds to its F.O.R.T. stat. */
+  total: number
+  filled: number
+  issues: SquadIssues
+}
+
+export function issueCount(issues: SquadIssues) {
+  return issues.empty + issues.mismatched + Number(issues.wrongJob)
+}
+
+/** "Trap Durability High" → "Trap Durability": the tier is noise on a row. */
+export function shortSetBonus(setBonus: string | null) {
   return setBonus?.replace(/\s+(Low|High)$/i, '') ?? null
 }
 
@@ -76,16 +117,6 @@ export function survivorLabels(
         caption: shortSetBonus(survivor.setBonus),
       }
     : { name: recordName as string, caption: survivor.personality }
-}
-
-export type SquadView = {
-  id: string
-  label: string
-  attribute: string
-  slots: Array<SquadSlotView>
-  /** Summed power of everyone in the squad. */
-  power: number
-  filled: number
 }
 
 export type PendingSlot = { squadId: string; slotIndex: number }
@@ -178,11 +209,15 @@ export function useSquads(payload: SquadsPayload, onAssigned: () => void) {
   const { selected } = useGetSelectedAccount()
 
   const records = useItemDatabaseStore((state) => state.records)
-  const ratings = useItemDatabaseStore((state) => state.ratings)
 
   const [isAssigning, setAssigning] = useState(false)
   /** The slot waiting for a survivor to be picked for it. */
   const [pendingSlot, setPendingSlot] = useState<PendingSlot | null>(null)
+  /** An auto-fill shown for approval before anything moves. */
+  const [fill, setFill] = useState<{
+    squadIds: Array<string>
+    plan: FillPlan<DecoratedSurvivor>
+  } | null>(null)
 
   useEffect(() => {
     const listener = window.electronAPI.notificationSquadsAssign(
@@ -193,11 +228,12 @@ export function useSquads(payload: SquadsPayload, onAssigned: () => void) {
 
         setAssigning(false)
         setPendingSlot(null)
+        setFill(null)
 
         toast[response.errorMessage ? 'error' : 'success'](
           response.errorMessage
-            ? `Could not move survivor: ${response.errorMessage}`
-            : 'Squad updated'
+            ? `Could not move survivors: ${response.errorMessage}`
+            : 'Squads updated'
         )
 
         onAssigned()
@@ -217,36 +253,37 @@ export function useSquads(payload: SquadsPayload, onAssigned: () => void) {
           survivor,
           getItemRecord(records, survivor.templateId)?.name
         ),
-        power: computeItemPower({
-          level: survivor.level,
-          tables: ratings,
-          templateId: survivor.templateId,
-        }),
+        power: ratingOf(survivor),
       })),
-    [payload, ratings, records]
+    [payload, records]
   )
 
   const squads: Array<SquadView> = useMemo(
     () =>
       survivorSquads.map((squad) => {
-        const members = decorated.filter(
-          (survivor) => survivor.squadId === squad.id
-        )
-        const lead = members.find((survivor) => survivor.slotIndex === 0)
+        const members = slotMapOf(decorated, squad.id)
+        const lead = members.get(squadLeaderSlotIndex) ?? null
 
         const slots: Array<SquadSlotView> = Array.from(
           { length: squadSlotCount },
           (_, slotIndex) => {
-            const survivor =
-              members.find((item) => item.slotIndex === slotIndex) ?? null
+            const survivor = members.get(slotIndex) ?? null
+            const isLeadSlot = slotIndex === squadLeaderSlotIndex
 
             return {
               slotIndex,
               survivor,
+              score: survivor
+                ? slotScore(survivor, slotIndex, squad.id, lead)
+                : null,
               matchesLead:
-                slotIndex === 0 || !survivor || !lead?.personality
+                isLeadSlot || !survivor || !lead?.personality
                   ? null
                   : survivor.personality === lead.personality,
+              matchesJob:
+                isLeadSlot && survivor
+                  ? leadJobMatches(survivor, squad.id)
+                  : null,
             }
           }
         )
@@ -255,120 +292,147 @@ export function useSquads(payload: SquadsPayload, onAssigned: () => void) {
           id: squad.id,
           label: squad.label,
           attribute: squad.attribute,
+          stat: squadAttributeStats[squad.attribute],
           slots,
-          filled: members.length,
-          power: members.reduce(
-            (accumulator, survivor) => accumulator + (survivor.power ?? 0),
-            0
-          ),
+          lead,
+          total: squadTotal(members, squad.id),
+          filled: members.size,
+          issues: {
+            empty: squadSlotCount - members.size,
+            mismatched: slots.filter((slot) => slot.matchesLead === false)
+              .length,
+            wrongJob: slots[squadLeaderSlotIndex].matchesJob === false,
+          },
         }
       }),
     [decorated]
   )
 
-  const unassigned = useMemo(
-    () => decorated.filter((survivor) => survivor.squadId === null),
-    [decorated]
-  )
-
-  /** Only survivors that can legally go in the pending slot. */
-  const candidates = useMemo(() => {
-    if (!pendingSlot) {
-      return []
+  const fort = useMemo(() => {
+    const totals: Record<FortStatKey, number> = {
+      fortitude: 0,
+      offense: 0,
+      resistance: 0,
+      technology: 0,
     }
 
-    const wantsLead = pendingSlot.slotIndex === 0
+    squads.forEach((squad) => {
+      totals[squad.stat] += squad.total
+    })
 
-    return decorated
-      .filter((survivor) => survivor.isLead === wantsLead)
-      .sort((a, b) => (b.power ?? 0) - (a.power ?? 0))
-  }, [decorated, pendingSlot])
+    return totals
+  }, [squads])
+
+  /** Who can take the pending slot, the biggest gain first. */
+  const candidates = useMemo(
+    () =>
+      pendingSlot
+        ? rankCandidates(decorated, pendingSlot.squadId, pendingSlot.slotIndex)
+        : [],
+    [decorated, pendingSlot]
+  )
 
   /** Whoever currently holds the pending slot, for the picker's header. */
   const occupant = useMemo(
     () =>
       pendingSlot
-        ? (decorated.find(
-            (survivor) =>
-              survivor.squadId === pendingSlot.squadId &&
-              survivor.slotIndex === pendingSlot.slotIndex
-          ) ?? null)
+        ? (squads
+            .find((squad) => squad.id === pendingSlot.squadId)
+            ?.slots[pendingSlot.slotIndex] ?? null)
         : null,
-    [decorated, pendingSlot]
+    [pendingSlot, squads]
   )
 
-  const totalPower = squads.reduce(
-    (accumulator, squad) => accumulator + squad.power,
-    0
-  )
   const totalFilled = squads.reduce(
     (accumulator, squad) => accumulator + squad.filled,
     0
   )
 
-  const handleAssign = (characterId: string) => {
-    if (!selected || !pendingSlot || isAssigning) {
+  const send = (assignments: Array<SquadAssignment>) => {
+    if (!selected || isAssigning || assignments.length === 0) {
       return
-    }
-
-    const assignments: Array<SquadAssignment> = [
-      {
-        characterId,
-        squadId: pendingSlot.squadId,
-        slotIndex: pendingSlot.slotIndex,
-      },
-    ]
-
-    /**
-     * Moving someone who is already slotted would leave them in two places,
-     * so whoever currently holds the target slot is pushed out first — one
-     * batch, so the profile only takes a single revision.
-     */
-    if (occupant && occupant.itemId !== characterId) {
-      assignments.unshift({
-        characterId: occupant.itemId,
-        squadId: '',
-        slotIndex: -1,
-      })
     }
 
     setAssigning(true)
     window.electronAPI.assignSquadSurvivors(selected, assignments)
   }
 
-  const handleClearSlot = (squadId: string, slotIndex: number) => {
-    if (!selected || isAssigning) {
-      return
+  const handleAssignTo = (characterId: string, target: PendingSlot) => {
+    const assignments: Array<SquadAssignment> = [
+      {
+        characterId,
+        squadId: target.squadId,
+        slotIndex: target.slotIndex,
+      },
+    ]
+    const current = decorated.find(
+      (survivor) =>
+        survivor.squadId === target.squadId &&
+        survivor.slotIndex === target.slotIndex
+    )
+
+    /**
+     * Moving someone who is already slotted would leave them in two places,
+     * so whoever currently holds the target slot is pushed out first — one
+     * batch, so the profile only takes a single revision.
+     */
+    if (current && current.itemId !== characterId) {
+      assignments.unshift({
+        characterId: current.itemId,
+        squadId: '',
+        slotIndex: -1,
+      })
     }
 
+    send(assignments)
+  }
+
+  const handleAssign = (characterId: string) => {
+    if (pendingSlot) {
+      handleAssignTo(characterId, pendingSlot)
+    }
+  }
+
+  const handleClearSlot = (squadId: string, slotIndex: number) => {
     const current = decorated.find(
       (survivor) =>
         survivor.squadId === squadId && survivor.slotIndex === slotIndex
     )
 
-    if (!current) {
-      return
+    if (current) {
+      send([{ characterId: current.itemId, squadId: '', slotIndex: -1 }])
     }
+  }
 
-    setAssigning(true)
-    window.electronAPI.assignSquadSurvivors(selected, [
-      { characterId: current.itemId, squadId: '', slotIndex: -1 },
-    ])
+  /** Works out an auto-fill and shows it; nothing moves until it is applied. */
+  const previewFill = (squadIds: Array<string>) => {
+    setFill({ squadIds, plan: planAutoFill(decorated, squadIds) })
+  }
+
+  const applyFill = () => {
+    if (fill) {
+      send(fill.plan.assignments)
+    }
   }
 
   return {
     candidates,
+    fill,
+    fort,
     isAssigning,
     occupant,
     pendingSlot,
     records,
     squads,
+    survivors: decorated,
     totalFilled,
-    totalPower,
-    unassigned,
 
+    applyFill,
+    cancelFill: () => setFill(null),
     handleAssign,
+    handleAssignTo,
     handleClearSlot,
+    previewFill,
     setPendingSlot,
   }
 }

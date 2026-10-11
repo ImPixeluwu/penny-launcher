@@ -1,262 +1,226 @@
-import type { SquadView } from './-hooks'
+import type { SquadIssues, SquadSlotView, SquadView } from './-hooks'
 import type { ItemRecordMap } from '../../../kernel/core/item-database'
 
-import { Crown, Plus, Users, X, Zap } from 'lucide-react'
+import { Crown, Plus, Wand2, X } from 'lucide-react'
 
+import { badgeUrl } from '../../../components/items/artboard'
+import { Chip, Panel } from '../../../components/page'
+import { Button } from '../../../components/ui/button'
+
+import { mythicLeadKey, mythicLeads } from './-lineups'
 import {
-  Artboard,
-  BadgeMark,
-  badgeUrl,
-  itemBadgeMarks,
-  setBonusInfo,
-} from '../../../components/items/artboard'
-import { itemBadge, resolveItemArt } from '../../../components/items/item-icon'
-import { Panel, PanelBody, PanelHeader, StatusPill } from '../../../components/page'
+  SetPips,
+  SquadEmblem,
+  SurvivorArt,
+  SurvivorTraits,
+  tallySets,
+} from './-squad-parts'
 
-import { getItemRecord } from '../../../state/items/database'
-
-import { fortStats, type FortStatKey } from '../../../config/constants/fortnite/fort'
-import { squadAttributeStats } from '../../../config/constants/fortnite/squads'
+import { prettifyWorkerTrait } from '../../../config/constants/fortnite/items'
+import {
+  squadLabelsById,
+  squadLeadJobs,
+  squadLeaderSlotIndex,
+} from '../../../config/constants/fortnite/squads'
 
 import { cn } from '../../../lib/utils'
 
-const attributeStats: Record<string, FortStatKey> = squadAttributeStats
+const mythicShort = new Map(mythicLeads.map((lead) => [lead.key, lead.short]))
 
-const fortStatByKey = new Map(fortStats.map((stat) => [stat.key, stat]))
+/** "Birdie" for a Mythic lead, the row name for anyone else. */
+function leadShortName(lead: SquadView['lead']) {
+  if (!lead) return null
 
-/** The squad's own emblem, as the game and the site draw it. */
-const squadEmblems: Record<string, string> = {
-  Squad_Attribute_Arms_CloseAssaultSquad: 'squads-close_assault_squad',
-  Squad_Attribute_Arms_FireTeamAlpha: 'squads-fire_team_alpha_squad',
-  Squad_Attribute_Medicine_EMTSquad: 'squads-emt_squad',
-  Squad_Attribute_Medicine_TrainingTeam: 'squads-training_team_squad',
-  Squad_Attribute_Scavenging_Gadgeteers: 'squads-gadgeteers_squad',
-  Squad_Attribute_Scavenging_ScoutingParty: 'squads-scouting_party_squad',
-  Squad_Attribute_Synthesis_CorpsofEngineering: 'squads-engineering_squad',
-  Squad_Attribute_Synthesis_TheThinkTank: 'squads-think_tank_squad',
+  const key = mythicLeadKey(lead.templateId)
+
+  return (key && mythicShort.get(key)) ?? lead.name
+}
+
+/** What needs fixing in a squad, worst first. */
+function issueLabels(issues: SquadIssues, hasLead: boolean) {
+  const labels: Array<string> = []
+  const emptySupports = issues.empty - (hasLead ? 0 : 1)
+
+  if (!hasLead) labels.push('No lead')
+  if (issues.wrongJob) labels.push('Wrong lead')
+  if (emptySupports > 0) labels.push(`${emptySupports} empty`)
+  if (issues.mismatched > 0) labels.push(`${issues.mismatched} mismatched`)
+
+  return labels
+}
+
+/** "Doctor" → "EMT Squad": where a lead of that job would count double. */
+function homeSquadFor(job: string | null) {
+  const wanted = `Is${job?.split('.').pop()?.replace(/^Is/, '').replace(/\s+/g, '') ?? ''}`
+  const squadId = Object.entries(squadLeadJobs).find(([, value]) => value === wanted)?.[0]
+
+  return squadId ? squadLabelsById[squadId] : null
 }
 
 /**
- * How many survivors of one set bonus it takes to switch it on, and what one
- * activation is worth — the table PennyDB publishes with every profile
- * (`survivor_bonus_overview`), so the launcher and the site agree.
+ * One squad, the way the game lays it out: the lead, then the seven
+ * supports, each saying what it adds to the squad's stat and why. The
+ * header says what the squad adds and what is wrong with it, so all eight
+ * can sit on the page at once and the one to fix still stands out.
  */
-const setRules: Record<string, { need: number; pct: number }> = {
-  'Ability Damage': { need: 3, pct: 5 },
-  Health: { need: 2, pct: 5 },
-  'Melee Damage': { need: 3, pct: 5 },
-  'Ranged Damage': { need: 3, pct: 5 },
-  Shield: { need: 2, pct: 5 },
-  'Shield Regeneration': { need: 2, pct: 5 },
-  'Trap Damage': { need: 3, pct: 5 },
-  'Trap Durability': { need: 2, pct: 8 },
-}
-
-export type SetBonusTally = {
-  count: number
-  file: string
-  label: string
-  need: number
-  pct: number
-}
-
-/** The set bonuses a squad's survivors carry, most complete first. */
-export function squadSetBonuses(squad: SquadView): Array<SetBonusTally> {
-  const tally = new Map<string, SetBonusTally>()
-
-  squad.slots.forEach((slot) => {
-    if (!slot.survivor || slot.slotIndex === 0) return
-
-    const info = setBonusInfo(slot.survivor.setBonus)
-
-    if (!info) return
-
-    const rule = setRules[info.label] ?? { need: 3, pct: 5 }
-    const entry = tally.get(info.label) ?? {
-      count: 0,
-      file: info.file,
-      label: info.label,
-      need: rule.need,
-      pct: rule.pct,
-    }
-
-    entry.count += 1
-    tally.set(info.label, entry)
-  })
-
-  return [...tally.values()].sort(
-    (a, b) => Math.floor(b.count / b.need) - Math.floor(a.count / a.need) || b.count - a.count
-  )
-}
-
-/**
- * Every set bonus on the account and what it adds up to across the eight
- * squads — the site's "Bonuses" board.
- */
-export function SetBonusBoard({ squads }: { squads: Array<SquadView> }) {
-  const totals = new Map<string, SetBonusTally & { active: number }>()
-
-  squads.forEach((squad) =>
-    squadSetBonuses(squad).forEach((entry) => {
-      const total = totals.get(entry.label) ?? { ...entry, active: 0, count: 0 }
-
-      total.count += entry.count
-      total.active += Math.floor(entry.count / entry.need)
-      totals.set(entry.label, total)
-    })
-  )
-
-  const all: Array<[string, string]> = [
-    ['Melee Damage', 'survivors-melee_weapon_damage'],
-    ['Ability Damage', 'survivors-ability_damage'],
-    ['Ranged Damage', 'survivors-ranged_weapon_damage'],
-    ['Trap Damage', 'survivors-trap_damage'],
-    ['Health', 'survivors-health'],
-    ['Shield', 'survivors-shield'],
-    ['Shield Regeneration', 'survivors-shield_regeneration'],
-    ['Trap Durability', 'survivors-trap_durability'],
-  ]
-
-  return (
-    <Panel>
-      <PanelHeader as="div" compact title="Set bonuses" />
-      <PanelBody className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {all.map(([label, file]) => {
-          const total = totals.get(label)
-          const active = total?.active ?? 0
-          const src = badgeUrl(file)
-
-          return (
-            <div
-              className={cn(
-                'flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2.5',
-                active === 0 && 'opacity-60'
-              )}
-              key={label}
-            >
-              {src && <img alt="" className="size-7 shrink-0 object-contain" src={src} />}
-              <span className="min-w-0">
-                <span className="block truncate text-ui text-muted-foreground">{label}</span>
-                <span className="figure block text-lg font-bold leading-tight text-primary">
-                  +{active * (setRules[label]?.pct ?? 5)}%
-                  {active > 0 && (
-                    <span className="ml-1.5 text-xs font-medium text-muted-foreground">
-                      ×{active} active
-                    </span>
-                  )}
-                </span>
-              </span>
-            </div>
-          )
-        })}
-      </PanelBody>
-    </Panel>
-  )
-}
-
 export function SquadCard({
   isAssigning,
+  onAutoFill,
   onClear,
   onPick,
   records,
   squad,
 }: {
   isAssigning: boolean
-  onClear: (squadId: string, slotIndex: number) => void
+  onAutoFill: () => void
+  onClear: (slotIndex: number) => void
   onPick: (slotIndex: number) => void
   records: ItemRecordMap
   squad: SquadView
 }) {
-  const stat = fortStatByKey.get(attributeStats[squad.attribute])
-  const emblem = badgeUrl(squadEmblems[squad.id] ?? '')
-  const bonuses = squadSetBonuses(squad)
+  const issues = issueLabels(squad.issues, Boolean(squad.lead))
+  const sets = tallySets(
+    squad.slots.map((slot) => ({
+      slotIndex: slot.slotIndex,
+      setBonus: slot.survivor?.setBonus ?? null,
+    }))
+  )
 
   return (
-    <Panel
-      className="relative flex flex-col overflow-hidden p-3"
-      style={{ borderLeft: `3px solid ${stat?.color ?? 'hsl(var(--border))'}` }}
-    >
-      {/* Header: emblem, name, members, power. */}
-      <div className="flex items-center gap-3">
-        {emblem ? (
-          <img alt="" className="size-9 shrink-0 object-contain" src={emblem} />
-        ) : (
-          <Users className="size-6 shrink-0 text-muted-foreground" />
-        )}
+    <Panel className="flex flex-col">
+      <header className="flex items-center gap-3 border-b border-border/30 px-4 py-3">
+        <SquadEmblem className="size-8" squadId={squad.id} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-title font-semibold leading-tight">{squad.label}</h3>
-          <p className="mt-0.5 flex items-center gap-2 text-xs font-medium">
-            <span style={stat ? { color: stat.color } : undefined}>
-              {stat?.label ?? squad.attribute}
-            </span>
-            <span className="text-muted-foreground">
-              <span className="figure">{squad.filled}</span>/8 members
+          <p
+            className={cn(
+              'mt-0.5 flex items-center gap-1.5 truncate text-2xs',
+              issues.length > 0 ? 'text-warning' : 'text-muted-foreground'
+            )}
+          >
+            {issues.length > 0 && (
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+            )}
+            <span className="truncate">
+              {issues.length > 0 ? issues.join(' · ') : `Led by ${leadShortName(squad.lead)}`}
             </span>
           </p>
         </div>
-        <span className="flex shrink-0 items-center gap-1 text-ui font-semibold">
-          <Zap className="size-3.5 text-muted-foreground" />
-          <span className="figure">{squad.power.toLocaleString()}</span>
+        <span className="figure shrink-0 text-title font-bold">
+          +{Math.round(squad.total).toLocaleString()}
         </span>
-      </div>
+        <Button
+          aria-label={`Auto-fill ${squad.label}`}
+          className="shrink-0"
+          disabled={isAssigning}
+          onClick={onAutoFill}
+          size="sm"
+          title="Fill this squad with its best survivors"
+          variant="outline"
+        >
+          <Wand2 className="size-3.5" />
+          Auto-fill
+        </Button>
+      </header>
 
-      {/* Set bonuses the squad's survivors carry. */}
-      <div className="mt-3 space-y-1 rounded-lg bg-background/40 p-1.5">
-        {bonuses.length > 0 ? (
-          bonuses.map((entry) => {
-            const active = Math.floor(entry.count / entry.need)
-            const src = badgeUrl(entry.file)
-
-            return (
-              <div
-                className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5"
-                key={entry.label}
-              >
-                {src && <img alt="" className="size-4 object-contain" src={src} />}
-                <span className="min-w-0 flex-1">
-                  <span className={cn('block truncate text-xs font-medium', active > 0 ? 'text-foreground' : 'text-muted-foreground')}>
-                    {entry.label}
-                  </span>
-                  <span className="block text-2xs text-muted-foreground">
-                    <span className="figure">{entry.count}</span>/
-                    <span className="figure">{entry.need}</span> survivors
-                  </span>
-                </span>
-                {active > 0 ? (
-                  <StatusPill tone="active">+{active * entry.pct}%</StatusPill>
-                ) : (
-                  <StatusPill tone="idle">Inactive</StatusPill>
-                )}
-              </div>
-            )
-          })
-        ) : (
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">No set bonus yet.</p>
-        )}
-      </div>
-
-      {/*
-        The lead first, then the seven supports — the order the game's own
-        squad screen gives them.
-      */}
-      <div className="mt-3 grid grid-cols-4 gap-1.5">
+      <ul className="flex-1 divide-y divide-border/20 px-2 py-1">
         {squad.slots.map((slot) => (
-          <SquadMember
+          <SlotRow
             isAssigning={isAssigning}
             key={slot.slotIndex}
-            onClear={() => onClear(squad.id, slot.slotIndex)}
+            onClear={() => onClear(slot.slotIndex)}
             onPick={() => onPick(slot.slotIndex)}
             records={records}
             slot={slot}
             squadLabel={squad.label}
           />
         ))}
-      </div>
+      </ul>
+
+      {sets.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-t border-border/30 px-3 py-2">
+          {sets.map((entry) => {
+            const src = badgeUrl(entry.file)
+
+            return (
+              <span
+                className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1"
+                key={entry.label}
+                title={`${entry.label}: ${entry.count} survivors, ${entry.need} make a set`}
+              >
+                {src && <img alt="" className="size-3.5 object-contain" src={src} />}
+                <span className="text-2xs font-medium">{entry.label}</span>
+                <SetPips count={entry.count} need={entry.need} />
+                <span
+                  className={cn(
+                    'figure text-2xs font-semibold',
+                    entry.active > 0 ? 'text-primary' : 'text-muted-foreground'
+                  )}
+                >
+                  {entry.active > 0 ? `+${entry.active * entry.pct}%` : `${entry.count}/${entry.need}`}
+                </span>
+                {entry.active > 0 && entry.spare > 0 && (
+                  <span className="text-2xs text-warning">
+                    <span className="figure">{entry.spare}</span> spare
+                  </span>
+                )}
+              </span>
+            )
+          })}
+        </div>
+      )}
     </Panel>
   )
 }
 
-function SquadMember({
+/** The +8 / −2 / ×2 beside a survivor: the squad rule that applies to it. */
+function BonusChip({ slot }: { slot: SquadSlotView }) {
+  const { score, survivor } = slot
+
+  if (!survivor || !score) return null
+
+  if (slot.slotIndex === squadLeaderSlotIndex) {
+    const home = homeSquadFor(survivor.managerSynergy)
+
+    return slot.matchesJob ? (
+      <span title="Leads its own job's squad, so it counts double">
+        <Chip tone="success">×2</Chip>
+      </span>
+    ) : (
+      <span
+        title={
+          home
+            ? `A ${prettifyWorkerTrait(survivor.managerSynergy)} only counts double in ${home}`
+            : undefined
+        }
+      >
+        <Chip tone="warning">Wrong squad</Chip>
+      </span>
+    )
+  }
+
+  if (score.bonus > 0) {
+    return (
+      <span title="Personality matches the lead">
+        <Chip tone="success">+{Math.round(score.bonus)}</Chip>
+      </span>
+    )
+  }
+
+  if (slot.matchesLead === false) {
+    return (
+      <span title="Personality does not match the lead">
+        <Chip tone="warning">
+          {score.bonus < 0 ? `−${Math.abs(Math.round(score.bonus))}` : 'No match'}
+        </Chip>
+      </span>
+    )
+  }
+
+  return null
+}
+
+function SlotRow({
   isAssigning,
   onClear,
   onPick,
@@ -268,86 +232,71 @@ function SquadMember({
   onClear: () => void
   onPick: () => void
   records: ItemRecordMap
-  slot: SquadView['slots'][number]
+  slot: SquadSlotView
   squadLabel: string
 }) {
-  const isLead = slot.slotIndex === 0
+  const isLead = slot.slotIndex === squadLeaderSlotIndex
+  const { score, survivor } = slot
 
-  if (!slot.survivor) {
+  if (!survivor || !score) {
     return (
-      <button
-        aria-label={isLead ? `Pick a lead for ${squadLabel}` : `Fill slot ${slot.slotIndex} of ${squadLabel}`}
-        className="grid aspect-square w-full place-items-center content-center gap-0.5 rounded-md border border-dashed border-border/70 text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary"
-        onClick={onPick}
-        type="button"
-      >
-        {isLead ? <Crown className="size-4" /> : <Plus className="size-4" />}
-        <span className="text-2xs">{isLead ? 'Lead' : 'Empty'}</span>
-      </button>
+      <li>
+        <button
+          className="flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left text-muted-foreground transition-colors hover:bg-accent/30 hover:text-primary disabled:pointer-events-none disabled:opacity-60"
+          disabled={isAssigning}
+          onClick={onPick}
+          type="button"
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-md border border-dashed border-border/70">
+            {isLead ? <Crown className="size-4" /> : <Plus className="size-4" />}
+          </span>
+          <span className="text-ui font-medium">{isLead ? 'Pick a lead' : 'Pick a survivor'}</span>
+        </button>
+      </li>
     )
   }
 
-  const survivor = slot.survivor
-  const art = resolveItemArt(survivor.templateId, records, survivor.portrait)
-  const marks = itemBadgeMarks({
-    personality: survivor.personality,
-    record: getItemRecord(records, survivor.templateId),
-    setBonus: survivor.setBonus,
-    templateId: survivor.templateId,
-  })
-  const match =
-    slot.matchesLead === true
-      ? ' · personality matches the lead'
-      : slot.matchesLead === false
-        ? ' · personality does not match the lead'
-        : ''
-
   return (
-    <div className="group relative">
+    <li className="group flex items-center gap-0.5">
       <button
-        className={cn(
-          'block w-full overflow-hidden rounded-md transition-transform duration-150 ease-out hover:-translate-y-0.5',
-          isLead && 'ring-2 ring-primary/60 ring-offset-1 ring-offset-card',
-          slot.matchesLead === false && 'ring-1 ring-warning/70'
-        )}
+        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-accent/30 disabled:pointer-events-none disabled:opacity-60"
+        disabled={isAssigning}
         onClick={onPick}
-        title={`${survivor.name}${survivor.caption ? ` · ${survivor.caption}` : ''}${match}`}
+        title={isLead ? 'Swap the lead' : 'Swap this survivor'}
         type="button"
       >
-        <Artboard className="aspect-square w-full" rarity={art.rarity}>
-          {art.imgUrl && (
-            <img
-              alt=""
-              className="absolute inset-0 size-full object-cover object-top"
-              decoding="async"
-              loading="lazy"
-              src={art.imgUrl}
-            />
-          )}
-          {marks.length > 0 && (
-            <span className="absolute left-0.5 top-0.5 flex gap-0.5">
-              {marks.map((entry) => (
-                <BadgeMark className="size-4" key={entry.src} mark={entry} />
-              ))}
-            </span>
-          )}
-          {typeof survivor.power === 'number' && survivor.power > 0 && (
-            <span className={cn(itemBadge, 'bottom-0.5 right-0.5 gap-0.5 rounded px-1 py-0.5')}>
-              <span className="text-muted-foreground">PL</span>
-              <span className="figure">{survivor.power}</span>
-            </span>
-          )}
-        </Artboard>
+        <SurvivorArt
+          className={cn('size-9', isLead && 'ring-2 ring-primary/60')}
+          personality={survivor.personality}
+          portrait={survivor.portrait}
+          records={records}
+          templateId={survivor.templateId}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-ui font-medium leading-tight">{survivor.name}</span>
+            {isLead && <Chip tone="accent">Lead</Chip>}
+          </span>
+          <span className="mt-0.5 block">
+            <SurvivorTraits survivor={survivor} />
+          </span>
+        </span>
+        <BonusChip slot={slot} />
+        <span className="figure w-10 shrink-0 text-right text-ui font-bold">
+          {Math.round(score.total)}
+        </span>
       </button>
-      <button
-        aria-label={`Remove ${survivor.name} from the squad`}
-        className="absolute -right-1 -top-1 z-20 grid size-5 place-items-center rounded-full bg-background text-muted-foreground opacity-0 shadow ring-1 ring-border transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
+      <Button
+        aria-label={`Remove ${survivor.name} from ${squadLabel}`}
+        className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
         disabled={isAssigning}
         onClick={onClear}
-        type="button"
+        size="icon"
+        title="Remove from the squad"
+        variant="ghost"
       >
-        <X className="size-3" />
-      </button>
-    </div>
+        <X className="size-3.5" />
+      </Button>
+    </li>
   )
 }

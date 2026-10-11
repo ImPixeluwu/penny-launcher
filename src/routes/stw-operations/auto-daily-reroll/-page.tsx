@@ -27,6 +27,7 @@ import { Button } from '../../../components/ui/button'
 import { useAccountSelectorData } from '../../../components/selectors/accounts/hooks'
 import { useRequestItemDatabase } from '../../../bootstrap/components/load-item-database'
 import { useItemDatabaseStore } from '../../../state/items/database'
+import { questRewardAmount } from '../../../config/constants/fortnite/accolade-xp'
 import { cn } from '../../../lib/utils'
 
 type Quest = DailyRerollStatus['quests'][number]
@@ -324,7 +325,7 @@ function AccountDailies({
                               key={reward.item}
                             >
                               <ItemIcon records={records} size="small" templateId={reward.item} />
-                              {reward.quantity.toLocaleString()}
+                              {questRewardAmount(reward.item, reward.quantity).toLocaleString()}
                             </span>
                           ))}
                         </span>

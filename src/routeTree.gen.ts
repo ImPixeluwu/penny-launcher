@@ -22,11 +22,8 @@ import { Route as StwOperationsTimelineRouteImport } from './routes/stw-operatio
 import { Route as StwOperationsSurvivorsRouteImport } from './routes/stw-operations/survivors/route'
 import { Route as StwOperationsStorageRouteImport } from './routes/stw-operations/storage/route'
 import { Route as StwOperationsSquadsRouteImport } from './routes/stw-operations/squads/route'
+import { Route as StwOperationsSixthPerksRouteImport } from './routes/stw-operations/sixth-perks/route'
 import { Route as StwOperationsShopRouteImport } from './routes/stw-operations/shop/route'
-import {
-  Route as StwOperationsSixthPerksRouteImport,
-  CompletionRoute as StwOperationsSixthPerksCompletionRouteImport,
-} from './routes/stw-operations/sixth-perks/route'
 import { Route as StwOperationsSchematicsRouteImport } from './routes/stw-operations/schematics/route'
 import { Route as StwOperationsRecycledRewardsRouteImport } from './routes/stw-operations/recycled-rewards/route'
 import { Route as StwOperationsRareItemFinderRouteImport } from './routes/stw-operations/rare-item-finder/route'
@@ -70,6 +67,7 @@ import { Route as AccountManagementFriendsRouteImport } from './routes/account-m
 import { Route as AccountManagementEulaRouteImport } from './routes/account-management/eula/route'
 import { Route as AccountManagementEpicGamesSettingsRouteImport } from './routes/account-management/epic-games-settings/route'
 import { Route as AccountsAddTypeImport } from './routes/accounts/add/$type'
+import { Route as StwOperationsSixthPerksCompletionRouteImport } from './routes/stw-operations/sixth-perks_/completion/route'
 
 // Create/Update Routes
 
@@ -135,22 +133,16 @@ const StwOperationsSquadsRouteRoute = StwOperationsSquadsRouteImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const StwOperationsShopRouteRoute = StwOperationsShopRouteImport.update({
-  path: '/stw-operations/shop',
-  getParentRoute: () => rootRoute,
-} as any)
-
 const StwOperationsSixthPerksRouteRoute =
   StwOperationsSixthPerksRouteImport.update({
     path: '/stw-operations/sixth-perks',
     getParentRoute: () => rootRoute,
   } as any)
 
-const StwOperationsSixthPerksCompletionRouteRoute =
-  StwOperationsSixthPerksCompletionRouteImport.update({
-    path: '/stw-operations/sixth-perks/completion',
-    getParentRoute: () => rootRoute,
-  } as any)
+const StwOperationsShopRouteRoute = StwOperationsShopRouteImport.update({
+  path: '/stw-operations/shop',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const StwOperationsSchematicsRouteRoute =
   StwOperationsSchematicsRouteImport.update({
@@ -405,6 +397,12 @@ const AccountsAddTypeRoute = AccountsAddTypeImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const StwOperationsSixthPerksCompletionRouteRoute =
+  StwOperationsSixthPerksCompletionRouteImport.update({
+    path: '/stw-operations/sixth-perks/completion',
+    getParentRoute: () => rootRoute,
+  } as any)
+
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
@@ -601,10 +599,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StwOperationsSixthPerksRouteImport
       parentRoute: typeof rootRoute
     }
-    '/stw-operations/sixth-perks/completion': {
-      preLoaderRoute: typeof StwOperationsSixthPerksCompletionRouteImport
-      parentRoute: typeof rootRoute
-    }
     '/stw-operations/squads': {
       preLoaderRoute: typeof StwOperationsSquadsRouteImport
       parentRoute: typeof rootRoute
@@ -631,6 +625,10 @@ declare module '@tanstack/react-router' {
     }
     '/stw-operations/xpboosts': {
       preLoaderRoute: typeof StwOperationsXpboostsRouteImport
+      parentRoute: typeof rootRoute
+    }
+    '/stw-operations/sixth-perks/completion': {
+      preLoaderRoute: typeof StwOperationsSixthPerksCompletionRouteImport
       parentRoute: typeof rootRoute
     }
     '/accounts/add/$type': {
@@ -690,7 +688,6 @@ export const routeTree = rootRoute.addChildren([
   StwOperationsSchematicsRouteRoute,
   StwOperationsShopRouteRoute,
   StwOperationsSixthPerksRouteRoute,
-  StwOperationsSixthPerksCompletionRouteRoute,
   StwOperationsSquadsRouteRoute,
   StwOperationsStorageRouteRoute,
   StwOperationsSurvivorsRouteRoute,
@@ -698,6 +695,7 @@ export const routeTree = rootRoute.addChildren([
   StwOperationsUrnsRouteRoute,
   StwOperationsVenturesRouteRoute,
   StwOperationsXpboostsRouteRoute,
+  StwOperationsSixthPerksCompletionRouteRoute,
   AccountsAddTypeRoute,
 ])
 

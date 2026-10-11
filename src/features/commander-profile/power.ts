@@ -92,6 +92,20 @@ export function survivorRating(templateId: string, level: number) {
 /** Match bonus a support survivor gets from its lead, by the lead's rarity token. */
 const personalityBonus: Record<string, number> = { c: 2, r: 4, sr: 8, uc: 3, vr: 5 }
 
+/**
+ * What a lead does to one support's rating: raised by the lead's rarity when
+ * their personalities match and, under a Mythic (`sr`) lead, lowered by 2
+ * when they do not (never below its own rating of 2 or less).
+ */
+export function supportBonus(leadTemplateId: string, matches: boolean, rating: number) {
+  const lead = parseSurvivorTemplate(leadTemplateId)
+
+  if (!lead?.lead) return 0
+  if (matches) return personalityBonus[lead.rarity] ?? 0
+
+  return lead.rarity === 'sr' && rating > 2 ? -2 : 0
+}
+
 export type SquadMember = {
   squadId: string
   slot: number
@@ -124,7 +138,6 @@ export function squadFort(members: ReadonlyArray<SquadMember>): Fort {
 
     const job = Object.entries(squadLeadJobs).find(([id]) => id.toLowerCase() === squadId)?.[1]
     const lead = list.find((member) => member.slot === 0)
-    const leadInfo = lead ? parseSurvivorTemplate(lead.templateId) : null
 
     list.forEach((member) => {
       const rating = survivorRating(member.templateId, member.level)
@@ -132,12 +145,12 @@ export function squadFort(members: ReadonlyArray<SquadMember>): Fort {
 
       if (member === lead) {
         if (job && typeof member.synergy === 'string' && member.synergy.split('.').pop() === job) total += rating
-      } else if (lead && leadInfo?.lead) {
-        if (member.personality && member.personality === lead.personality) {
-          total += personalityBonus[leadInfo.rarity] ?? 0
-        } else if (leadInfo.rarity === 'sr' && rating > 2) {
-          total -= 2
-        }
+      } else if (lead) {
+        total += supportBonus(
+          lead.templateId,
+          Boolean(member.personality) && member.personality === lead.personality,
+          rating
+        )
       }
 
       fort[stat] += total

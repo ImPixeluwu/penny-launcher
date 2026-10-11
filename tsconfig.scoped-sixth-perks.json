@@ -14,6 +14,8 @@
     "src/state/stw-operations/sixth-perks.ts",
     "src/state/stw-operations/sixth-perks.test.ts",
     "src/routes/stw-operations/sixth-perks/*.tsx",
+    "src/routes/stw-operations/sixth-perks_/completion/*.tsx",
+    "src/route-tree.test.ts",
     "src/routeTree.gen.ts",
     "src/config/navigation.ts",
     "src/config/navigation.test.ts",

@@ -21,6 +21,7 @@ import {
 
 import { useQuestViews, useQuestsResource } from './-hooks'
 
+import { questRewardAmount } from '../../../config/constants/fortnite/accolade-xp'
 import { cn } from '../../../lib/utils'
 
 /** The game's own wording for the categories it ships. */
@@ -246,7 +247,7 @@ function QuestCard({
                       : undefined
                   }
                 />
-                {reward.quantity.toLocaleString()}
+                {questRewardAmount(reward.item, reward.quantity).toLocaleString()}
               </li>
             ))}
           </ul>

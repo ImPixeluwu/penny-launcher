@@ -23,6 +23,7 @@ import { Skeleton } from '../../../components/ui/skeleton'
 import { ItemIcon } from '../../../components/items/item-icon'
 import { Button } from '../../../components/ui/button'
 import { cn } from '../../../lib/utils'
+import { questRewardAmount } from '../../../config/constants/fortnite/accolade-xp'
 
 import { useRequestItemDatabase } from '../../../bootstrap/components/load-item-database'
 import { getItemRecord, useItemDatabaseStore } from '../../../state/items/database'
@@ -236,7 +237,7 @@ function DailyQuestsPanel({ dailies, records, resource }: { dailies: Array<Daily
                     {quest.rewards.slice(0, 4).map((reward) => (
                       <li className="figure flex items-center gap-1 rounded-md bg-muted/50 py-0.5 pl-0.5 pr-2 text-xs" key={reward.item}>
                         <ItemIcon records={records} size="small" templateId={reward.item} />
-                        {reward.quantity.toLocaleString()}
+                        {questRewardAmount(reward.item, reward.quantity).toLocaleString()}
                       </li>
                     ))}
                   </ul>

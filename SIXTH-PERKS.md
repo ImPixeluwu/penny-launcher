@@ -24,6 +24,13 @@ the *Penny 6th Perks — native API v6 integration* handover package.
   started on one page finishes on the other. A rescan keeps the last result
   on screen. A reply that lands after a newer scan, or after the Collection
   Book setting changed, is dropped.
+- The planner route is its own file, `sixth-perks_/completion/route.tsx`.
+  The router plugin regenerates `routeTree.gen.ts` on every dev start and
+  build and reads only each file's `Route` export, so a second route in the
+  catalog's file was dropped and the page fell through to the home screen.
+  The trailing `_` keeps it a sibling rather than a child of the catalog.
+  `src/route-tree.test.ts` fails if the committed tree drifts from the
+  plugin's output.
 - The 27 handover tests were ported to vitest
   (`src/features/sixth-perks/{model,planner}.test.ts`,
   `src/kernel/core/sixth-perks.test.ts`). Store and page render tests were

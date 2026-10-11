@@ -81,8 +81,8 @@
 
   "managermartialartist_sr_dragon": {
     "managerSynergy": "Homebase.Manager.IsMartialArtist",
-    "personality": "Homebase.Worker.Personality.IsCooperative",
-    "portrait": "WorkerPortrait:IconDef-ManagerPortrait-SR-Soldier-malcolm"
+    "personality": "Homebase.Worker.Personality.IsAdventurous",
+    "portrait": "WorkerPortrait:IconDef-ManagerPortrait-SR-MartialArtist-dragon"
   },
   "managermartialartist_sr_samurai": {
     "managerSynergy": "Homebase.Manager.IsMartialArtist",
@@ -98,7 +98,7 @@
   "managersoldier_sr_malcolm": {
     "managerSynergy": "Homebase.Manager.IsSoldier",
     "personality": "Homebase.Worker.Personality.IsCooperative",
-    "portrait": "WorkerPortrait:IconDef-ManagerPortrait-SR-MartialArtist-dragon"
+    "portrait": "WorkerPortrait:IconDef-ManagerPortrait-SR-Soldier-malcolm"
   },
   "managersoldier_sr_princess": {
     "managerSynergy": "Homebase.Manager.IsSoldier",

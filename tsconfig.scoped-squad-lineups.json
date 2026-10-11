@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "forge.env.d.ts",
+    "src/kernel/preload.ts",
+    "src/kernel/core/squads.ts",
+    "src/routes/stw-operations/squads/*.ts",
+    "src/routes/stw-operations/squads/*.tsx"
+  ],
+  "exclude": ["node_modules", "dist"]
+}
