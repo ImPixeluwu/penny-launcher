@@ -253,7 +253,7 @@ export function AccountResourceGate<T>({
   children: (data: T) => ReactNode
   icon: LucideIcon
   /** Say what is actually happening when it is slow enough to read. */
-  loading?: { title: string; description: string }
+  loading?: { title: string; description?: string }
   resource: AccountResource<T>
   /** Lower-case noun for the messages: "the backpack", "Ventures progress". */
   what: string
@@ -284,7 +284,7 @@ export function AccountResourceGate<T>({
   }
   return (
     <div role="status">
-      <EmptyState description={loading?.description ?? 'Reading the account from Epic.'} icon={icon} title={loading?.title ?? `Loading ${what}…`} />
+      <EmptyState description={loading ? loading.description : 'Reading the account from Epic.'} icon={icon} title={loading?.title ?? `Loading ${what}…`} />
     </div>
   )
 }
