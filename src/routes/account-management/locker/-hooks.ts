@@ -76,6 +76,7 @@ export function useLockerPage() {
     }))
   )
   const {
+    claimFor,
     reset,
     setCard,
     setCompanions,
@@ -89,6 +90,7 @@ export function useLockerPage() {
     setResponse,
   } = useLockerStore(
     useShallow((state) => ({
+      claimFor: state.claimFor,
       reset: state.reset,
       setCard: state.setCard,
       setCompanions: state.setCompanions,
@@ -127,6 +129,10 @@ export function useLockerPage() {
         setCompanions(response)
       }),
       window.electronAPI.notificationLockerEquip(async (response) => {
+        if (!isSelectedAccount(response.accountId)) {
+          return
+        }
+
         setEquipping(null)
 
         toast[response.errorMessage ? 'error' : 'success'](
@@ -138,6 +144,10 @@ export function useLockerPage() {
         )
       }),
       window.electronAPI.notificationLockerCard(async (response) => {
+        if (!isSelectedAccount(response.accountId)) {
+          return
+        }
+
         setCard(response)
 
         if (response.errorMessage) {
@@ -153,6 +163,12 @@ export function useLockerPage() {
       listeners.forEach((listener) => listener.removeListener())
     }
   }, [])
+
+  useEffect(() => {
+    if (accountId) {
+      claimFor(accountId)
+    }
+  }, [accountId])
 
   useEffect(() => {
     if (!selected) {
