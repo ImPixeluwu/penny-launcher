@@ -404,6 +404,7 @@ function Content() {
 
         <FilterBar>
           <Segmented
+            label={t('gifts-information.filters.group-by')}
             onChange={setGroupMode}
             options={groupOptions}
             value={groupMode}
